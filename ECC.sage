@@ -61,6 +61,9 @@ class EllipticPoint:
         if self.curve != point.curve:
             raise Exception("Points not in same curve")
 
+        if self.curve.is_singular:
+            raise Exception("Cannot add points on a singular curve!")
+
         curve = self.curve
 
         if self == curve.identity():
@@ -128,6 +131,10 @@ class EllipticCurve:
     def __init__(self,A,B):
         self.A = A
         self.B = B
+
+        self.discriminate = -16*(4*self.A^3 +26*self.B^2)
+        # If the discriminate is 0, the curve is singular. Therefore, this boolean expression works
+        self.is_singular = self.discriminate == 0
 
     def calculate(self, x):
         if x == oo:
