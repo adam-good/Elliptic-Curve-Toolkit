@@ -1,6 +1,19 @@
-from random import sample
+'''
+    Filename:       ECC.sage
+    Author:         Adam Good
+    Description:    Provides a basic framework for Elliptic Curve Operations with relation to Cryptography.
+'''
 
 def square_root_mod(c,p):
+    """Solves the equation x^2 = x mod p for x
+    
+    Arguments:
+        c {int} -- The value to take the square root of
+        p {int} -- The Modulus
+    
+    Returns:
+        (int, int) -- A tuple containing the positive and negative roots of the equation (None if they don't exist)
+    """
     L = legendre_symbol(c,p)
     if L == -1:
         return None
@@ -25,6 +38,16 @@ def square_root_mod(c,p):
 
 class EllipticPoint:
     def __init__(self, x, y, curve):
+        """Initialize an EllipticPoint
+        
+        Arguments:
+            x {int} -- The x value of the point on an Elliptic Curve
+            y {int} -- The y value of the point on an Elliptic Curve (X^3 + AX^2 + B mod p)
+            curve {EllipticCurve} -- The Elliptic Curve that the point exists on/in
+        
+        Raises:
+            Exception: The point does not exists in/on the curve.
+        """
         self.curve = curve
         if self.curve.field != None and (x,y) != (oo,oo): 
             (x, y) = (x % curve.field, y % curve.field)
@@ -36,6 +59,11 @@ class EllipticPoint:
             raise Exception("Point not in curve!!")
 
     def is_valid(self):
+        """Checks if the point is a valid point on the given curve
+        
+        Returns:
+            bool -- True if the point exists on the curve; False otherwise
+        """
         if self.curve == None:
             if self.x == oo and self.y == oo:
                 return True
@@ -48,6 +76,14 @@ class EllipticPoint:
                 return False
 
     def __eq__(self,point):
+        """Overload the Equality Operator 
+        
+        Arguments:
+            point {EllipticPoint} -- The Elliptic Point that this Point is being compared to
+        
+        Returns:
+            bool -- True if points are equal; False otherwise
+        """
         if self.curve != point.curve:
             return False
         x1,y1 = self.values
@@ -58,6 +94,18 @@ class EllipticPoint:
             return False
 
     def __add__(self, point):
+        """An Overload of the Addition Operator (self + point)
+        
+        Arguments:
+            point {EllipticPoint} -- The point that this point is being added to
+        
+        Raises:
+            Exception: The points do not exist on the same curve
+            Exception: The curve is singular
+        
+        Returns:
+            EllipticPoint -- The solution from adding points on an Elliptic Curve
+        """
         if self.curve != point.curve:
             raise Exception("Points not in same curve")
 
@@ -80,8 +128,10 @@ class EllipticPoint:
             if self == -point:
                 return curve.identity()
             elif self == point:
+                # TODO: This will break on an EC over a Finite Field where the inverse of the numerators DNE
                 slope = (3*x1^2 + A) / (2 * y1)
             elif self != point:
+                # TODO: This will break on an EC over a Finite Field where the inverse of the numerators DNE
                 slope = (y2 - y1) / (x2 - x1)
 
             x3 = (slope^2 - x1 - x2)
@@ -90,34 +140,85 @@ class EllipticPoint:
             return EllipticPoint(x3,y3,self.curve)
 
     def __sub__(self, point):
+        """An overload of the subtraction operator (self - point)
+        
+        Arguments:
+            point {EllipticPoint} -- The Elliptic Point that will be subtracted from this point
+        
+        Returns:
+            EllipticPoint -- The solution of subtracting points on an Elliptic Curve
+        """
         neg = -point
         return self+neg
 
     def __neg__(self):
+        """An overload of the arithmetic negation operator (-self)
+        
+        Returns:
+            EllipticPoint -- Returns the negation of self (reflection of self across the X axis)
+        """
         return EllipticPoint(self.x, -self.y, self.curve)
 
     def __mul__(self, other):
+        """An overload of the multiplication operator (self * other)
+        
+        Arguments:
+            other {int} -- The value to be self is to be multiplied by.
+
+        Raises:
+            Exception: Cannot multiply non-int type by EllipticPoint
+        
+        Returns:
+            EllipticPoint -- The result of multiplying an Elliptic Point by a Scalar
+        """
         if isinstance(other, int):
             return EllipticPoint.double_and_add(self.curve, self, other)
         else:
             raise Exception(f'Cannot multiply type {type(other)} by {type(self)}')
 
     def __rmul__(self, other):
+        """An overload of the multiplication operator [reversed order] (other * self)
+        
+        Arguments:
+            other {int} -- The value that self will be multiplied by
+        
+        Returns:
+            EllipticPoint -- The result of multiplying an EllipticPoint by a Scalar value
+        """
         return self.__mul__(other)
 
     def __str__(self):
+        """Overload of the string representation of an EllipticPoint
+        
+        Returns:
+            str -- A string reptresentation of an Elliptic Point
+        """
         if self == self.curve.identity():
             return "𝒪"
-             #return u'\u1D4AA'
         return "EC(" + str(self.x) + ", " + str(self.y) + ")"
 
     def __repr__(self):
+        """Overload of the string representation of an EllipticPoint
+        
+        Returns:
+            str -- A string reptresentation of an Elliptic Point
+        """
         if self == self.curve.identity():
             return "𝒪"
              #return u'\u1D4AA'
         return "EC(" + str(self.x) + ", " + str(self.y) + ")"
 
     def double_and_add(curve, P, n):
+        """An implementation of the Double and Add algorithm used for efficient repeated Elliptic Point addition
+        
+        Arguments:
+            curve {EllipticCurve} -- An Elliptic Curve that the Elliptic Point exists on
+            P {EllipticPoint} -- An Elliptic Point to be added repeatadly
+            n {int} -- The number of times to add P
+        
+        Returns:
+            EllipticPoint -- The result of the repeated addition
+        """
         Q = P
         R = curve.identity()
         while n > 0:
@@ -129,6 +230,12 @@ class EllipticPoint:
 
 class EllipticCurve:
     def __init__(self,A,B):
+        """Initialize an Elliptic Curve defined by Y^2 = X^3 + AX + B
+        
+        Arguments:
+            A {int} -- The coefficient of X^1 in the Elliptic Curve Equation
+            B {int} -- The coefficient of X^0 in the Elliptic Curve Equation
+        """
         self.A = A
         self.B = B
 
