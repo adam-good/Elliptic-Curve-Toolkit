@@ -244,6 +244,14 @@ class EllipticCurve:
         self.is_singular = self.discriminate == 0
 
     def calculate(self, x):
+        """Calculate the Y 
+        
+        Arguments:
+            x {[type]} -- [description]
+        
+        Returns:
+            [type] -- [description]
+        """
         if x == oo:
             return oo,oo
         else:
