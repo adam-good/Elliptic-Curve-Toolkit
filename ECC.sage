@@ -58,6 +58,20 @@ class EllipticPoint:
         if not self.is_valid():
             raise Exception("Point not in curve!!")
 
+    def is_on_curve(self, curve):
+        """Checks if this point is on a given elliptic curve
+        
+        Arguments:
+            curve {EllipticCurve} -- An elliptic curve to be checked
+        
+        Returns:
+            bool -- True if point is on curve, false otherwise
+        """
+        if self.y in curve.calculate(self.x):
+            return True
+        else:
+            return False
+
     def is_valid(self):
         """Checks if the point is a valid point on the given curve
         
@@ -69,11 +83,20 @@ class EllipticPoint:
                 return True
             else:
                 return False
+        elif self.curve.calculate(self.x) == None:
+            return False
         else:
             if self.y in self.curve.calculate(self.x):
                 return True
             else:
                 return False
+
+    def get_order(self):
+        current = self
+        for q in range(self.curve.field + 1):
+            if current == self.curve.identity():
+                return q+1
+            current = current + self
 
     def __eq__(self,point):
         """Overload the Equality Operator 
@@ -173,6 +196,8 @@ class EllipticPoint:
         """
         if isinstance(other, int):
             return EllipticPoint.double_and_add(self.curve, self, other)
+        elif isinstance(other, sage.rings.integer.Integer):
+            return self.__mul__(int(other))
         else:
             raise Exception(f'Cannot multiply type {type(other)} by {type(self)}')
 
@@ -228,6 +253,29 @@ class EllipticPoint:
             n = n//2
         return R
 
+    def ECDLP_collision_attack(curve, P, Q, list_length):
+        raise Exception("This is super broke, don't use it")
+        p = curve.field
+
+        js = [randint(1,p) for i in range(list_length)]
+        L1 = { (j*P).values:j for j in js }
+
+        solution = None
+        for _ in range(list_length):
+            k = randint(1,p)
+            l2 = (Q + k*P).values
+            if l2 in L1.keys():
+                j = L1[l2]
+                solution = (j-k) % p
+                break
+
+        return solution
+
+    def ECDLP_bruteforce_attack(curve, P, Q, tries):
+        for n in range(1, tries):
+            if Q == n*P:
+                return n
+            
 class EllipticCurve:
     def __init__(self,A,B):
         """Initialize an Elliptic Curve defined by Y^2 = X^3 + AX + B
@@ -282,6 +330,15 @@ class FiniteEllipticCurve(EllipticCurve):
         else:
             return square_root_mod(x^3 + self.A*x + self.B, self.field)
 
+    def get_bit(self, x, y):
+        if y not in self.calculate(x):
+            raise Exception("This y value does not correspond to the given x value")
+
+        if 0 <= y and y < self.field//2:
+            return 0
+        elif self.field//2 <= y < self.field:
+            return 1
+
     def elems(self):
         curve = [self.identity()]
 
@@ -305,4 +362,108 @@ class FiniteEllipticCurve(EllipticCurve):
         else:
             return False
 
+class EC_MVElGamalSystem():
+    def __init__(self, curve, point):
+        self.curve = curve
+        self.point = point
+        self.p = self.curve.field
 
+        if self.curve.is_singular:
+            raise Exception("Can't do ElGamal Encryption on Singular Curve")
+        
+        if not self.point.is_on_curve(self.curve):
+            raise Exception("Point must exist on Curve for ElGamal")
+
+    def generate_public_key(self, secret_key):
+        return secret_key * self.point
+
+    def encrypt(self, plaintext, public_key, k=None):
+        m1, m2 = plaintext
+        if k == None:
+            k = randint(1, self.p)
+        R = k * self.point
+
+        S = k * public_key
+        xs, ys = S.values
+
+        c1 = xs*m1 % self.p
+        c2 = ys*m2 % self.p
+
+        return (R,c1,c2)
+
+    def decrypt(self, secret_key, ciphertext):
+        R, c1, c2 = ciphertext
+
+        T = secret_key * R
+        xt,yt = T.values
+
+        m1 = (inverse_mod(xt, self.p) * c1) % self.p
+        m2 = (inverse_mod(yt, self.p) * c2) % self.p
+
+        return (m1,m2)
+
+class EC_ElGamalSystem():
+    def __init__(self, curve, point):
+        self.curve = curve
+        self.point = point
+
+        if self.curve.is_singular:
+            raise Exception("Can't do ElGamal Encryption on Singular Curve")
+        
+        if not self.point.is_on_curve(self.curve):
+            raise Exception("Point must exist on Curve for ElGamal")
+
+    def generate_public_key(self, private_key):
+        return private_key * self.point
+        
+    def Encrypt(self, private_key, public_key, message):
+        c1 = private_key * self.point
+        c2 = message + private_key * public_key
+        return (c1, c2)
+
+    def Decrypt(self, ciphertext, private_key):
+        c1,c2 = ciphertext
+        return c2 - private_key * c1
+
+class EC_DiffieHellmanSystem():
+    def __init__(self, curve, point):
+        self.curve = curve
+        self.point = point
+
+    def generate_public_key(self, private_key):
+        return private_key * self.point
+
+    def compute_secret(self, private_key, public_key):
+        return private_key * public_key
+
+class ECDSA():
+    def __init__(self, curve, point):
+        self.curve = curve
+        self.point = point
+        self.order = self.point.get_order()
+
+        if not is_prime(self.order):
+            raise Exception("The Order of the public point must be prime")
+
+    def verification_key(self, signing_key):
+        return signing_key * self.point
+
+    def sign(self, signing_key, ephemeral_key, document):
+        document = document % self.order
+        ephemeral_key = ephemeral_key % self.order
+
+        S1 = (ephemeral_key * self.point).values[0] % self.order
+        S2 = ((document + signing_key * S1) * inverse_mod(ephemeral_key, self.order)) % self.order
+
+        return (S1, S2)
+
+    def verify(self, verification_key, document, S1, S2):
+        v1 = (document * inverse_mod(S2, self.order)) % self.order
+        v2 = (S1 * inverse_mod(S2, self.order)) % self.order
+
+        x,y = (v1 * self.point + v2*verification_key).values
+        x,y = x%self.order, y%self.order
+
+        return x == S1
+
+        

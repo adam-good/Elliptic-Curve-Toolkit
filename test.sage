@@ -7,13 +7,14 @@ p = 11
 curve = FiniteEllipticCurve(A,B,p)
 P,Q = sample(curve.elems(), 2)
 
-n = int(123)
-s = curve.identity()
-for i in range(n):
-    s = s + Q
-    # print(s)
-print(f'{s}')
-print(f'{Q*n}')
-print(f'{n*Q}')
-print(curve.identity())
-print(curve.elems())
+elgamal = EC_ElGamalSystem(curve, P)
+priv = 32
+pub = elgamal.generate_public_key(priv)
+
+plaintext = Q
+ciphertext = elgamal.Encrypt(priv, pub, plaintext)
+message = elgamal.Decrypt(ciphertext, priv)
+
+print(f'Plaintext:\t {plaintext}')
+print(f'Ciphertext:\t {ciphertext}')
+print(f'Message:\t {message}')
