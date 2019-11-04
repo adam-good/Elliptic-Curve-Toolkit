@@ -36,6 +36,195 @@ def square_root_mod(c,p):
             neg_root = -root % p
             return (root, neg_root)
 
+def tau_decomposition(n):
+    n0 = n
+    n1 = 0
+    L = []
+    while n0 != 0 or n1 != 0:
+        if n0 % 2 != 0:
+            vi = 2 - ( (n0 - 2*n1) % 4 )
+            n0 = n0 - vi
+        else:
+            vi = 0
+        i += 1
+        (n0, n1) = (n1 - int(0.5*n0), -int(0.5*n0) )
+        L.append(vi)
+
+    return L
+
+class WeierStrassPoint():
+    def __init__(self, x,y,curve):
+        self.x = x
+        self.y = y
+        self.curve = curve
+        self.field = curve.field
+
+        self.values = (x,y)
+
+        if not self.is_valid():
+            raise Exception("Not a Valid Point")
+
+    def is_valid(self):
+        if self.x == None or self.y == None:
+            return False
+
+        if self.y in self.curve.calculate(self.x):
+            return True
+        else:
+            return False
+
+    def __eq__(self,point):
+        if self.curve != point.curve:
+            return False
+        x1,y1 = self.values
+        x2,y2 = point.values
+        if (x1 == x2) and (y1 == y2):
+            return True
+        else:
+            return False
+
+    def __neg__(self):
+        return WeierStrassPoint(self.x, self.y - self.curve.a1 * self.x - self.curve.a3, self.curve)
+
+    def __add__(self, point):
+        if self == self.curve.identity():
+            return point
+        elif point == self.curve.identity():
+            return self
+        
+        if self == -point:
+            return self.curve.identity()
+
+        x1,y1 = self.values
+        x2,y2 = point.values
+
+        a1 = self.curve.a1
+        a2 = self.curve.a2
+        a3 = self.curve.a3
+        a4 = self.curve.a4
+        a6 = self.curve.a6
+
+        if x1 != x2:
+            lamb = (y2 - y1) / (x2 - x1)
+            nu = (y1*x2 - y2*x1) / (x2-x1)
+        else:
+            lamb = (3*x1^2 + 2*a2*x1 + a4 - a1*y1) / (2*y1 + a1*x1 + a3)
+            nu = (-x1^3 + a4*x1 + 2*a6 - a3*y1) / (2*y1 + a1*x2 + a3)
+
+        x3 = lamb^2 + a1*lamb - a2 - x1 - x2
+        y3  = -(lamb + a1) * x3 - nu - a3
+
+        return WeierStrassPoint(x3, y3, self.curve)
+
+    def __sub__(self, point):
+        point = -point
+        return self + point
+
+    def __mul__(self, other):
+        if isinstance(other, int):
+            return EllipticPoint.double_and_add(self.curve, self, other)
+        elif isinstance(other, sage.rings.integer.Integer):
+            return self.__mul__(int(other))
+        else:
+            raise Exception(f'Cannot multiply type {type(other)} by {type(self)}')
+
+    def __rmul__(self,other):
+        return self.__mul__(other)
+
+    def __str__(self):
+        """[summary]
+        
+        Returns:
+            [type] -- [description]
+        """
+        if self == self.curve.identity():
+            return "𝒪"
+        # return "EC(" + str(self.x) + ", " + str(self.y) + ")"
+        return f"EC({self.x}, {self.y})"
+
+    def __repr__(self):
+        """Overload of the string representation of an EllipticPoint
+        
+        Returns:
+            str -- A string reptresentation of an Elliptic Point
+        """
+        if self == self.curve.identity():
+            return "𝒪"
+        # return "EC(" + str(self.x) + ", " + str(self.y) + ")"
+        return f"EC({self.x}, {self.y})"
+
+    def double_and_add(P, n, curve):
+        Q = P
+        R = curve.identity()
+        while n > 0:
+            if n % 2 == 1:
+                R = Q+R
+            Q = Q+Q
+            n = n//2
+        return R
+
+class WeierStrassCurve():
+    def __init__(self, a1,a2,a3,a4,a6, gf):
+        self.a1 = a1
+        self.a2 = a2
+        self.a3 = a3
+        self.a4 = a4
+        self.a6 = a6
+        self.field = gf
+
+        self.is_singular = True if self.discriminate() == 0 else False
+
+    def discriminate(self):
+        b2 = self.a1^2 + 4*self.a2
+        b4 = 2*self.a4 + self.a1*self.a2
+        b6 = self.a3^2 + 4*self.a6
+        b8 = self.a1^2 * self.a6 + 4*self.a2*self.a6 - self.a1*self.a3*self.a4 + self.a2*self.a3^2 - self.a4^2
+
+        delta = -b2^2 * b8 - 8*b4^3 -27*b6^2 + 9*b2*b4*b6
+
+        return delta
+
+    def identity(self):
+        return WeierStrassPoint(oo, oo, self)
+
+    def calculate(self, x):
+        if x == oo:
+            return (oo, oo)
+
+        if (self.a1 != 0 and
+            self.a2 != 0 and
+            self.a3 != 0):
+            y1 = x^3 + self.a2*x^2 + self.a4*x + self.a6
+            y2 = x^3 + self.a2*x^2 + (self.a4 - self.a1)*x + (self.a6 - self.a3)
+
+        else:
+            # y1 = x^3 + self.a2*x^2 + self.a4*x + self.a6
+            # y2 = -y1
+            y1,y2 = sqrt(x^3 + self.a4*x + self.a6)
+
+        return (y1,y2)
+
+    def elems(self):
+        yield self.identity()
+        for x in self.field:
+            y1,y2 = self.calculate(x)
+            if y1 == y2:
+                yield WeierStrassPoint(x,y1,self)
+            else:
+                yield WeierStrassPoint(x,y1,self)
+                yield WeierStrassPoint(x,y2,self)
+
+    def __eq__(self, curve):
+        if (self.a1 == curve.a1 and
+           self.a2 == curve.a2 and
+           self.a3 == curve.a3 and
+           self.a4 == curve.a4 and
+           self.a6 == curve.a6 and
+           self.field == curve.field):
+            return True
+        else:
+            return False
+
 class EllipticPoint:
     def __init__(self, x, y, curve):
         """Initialize an EllipticPoint
