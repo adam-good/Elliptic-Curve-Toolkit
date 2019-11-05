@@ -3,6 +3,7 @@
     Author:         Adam Good
     Description:    Provides a basic framework for Elliptic Curve Operations with relation to Cryptography.
 '''
+from multiprocessing import Process, Lock, Value
 
 def square_root_mod(c,p):
     """Solves the equation x^2 = x mod p for x
@@ -68,7 +69,7 @@ class WeierStrassPoint():
         if self.x == None or self.y == None:
             return False
 
-        if self.y in self.curve.calculate(self.x):
+        if self.curve.LHS(self.x, self.y) == self.curve.RHS(self.x):
             return True
         else:
             return False
@@ -187,7 +188,25 @@ class WeierStrassCurve():
     def identity(self):
         return WeierStrassPoint(oo, oo, self)
 
+
+    def RHS(self, x):
+        if x == oo:
+            return oo
+        else:
+            return x^3 + self.a2*x^2 + self.a4*x + self.a6
+
+    def LHS(self, x, y):
+        if x == oo and y == oo:
+            return oo
+        elif (x == oo and y != oo or
+              y == oo and x != oo):
+            raise Exception(f"Not On Curve: {x,y}")
+        else:
+            return y^2 + self.a1*x*y + self.a3*y
+
+
     def calculate(self, x):
+        raise Exception("Not Implemented")
         if x == oo:
             return (oo, oo)
 
@@ -198,11 +217,13 @@ class WeierStrassCurve():
             y2 = x^3 + self.a2*x^2 + (self.a4 - self.a1)*x + (self.a6 - self.a3)
 
         else:
-            # y1 = x^3 + self.a2*x^2 + self.a4*x + self.a6
-            # y2 = -y1
-            y1,y2 = sqrt(x^3 + self.a4*x + self.a6)
+            y1 = x^3 + self.a2*x^2 + self.a4*x + self.a6
+            y2 = -y1
 
-        return (y1,y2)
+        if y1 == y2:
+            return (y1)
+        else:
+            return (y1,y2)
 
     def elems(self):
         yield self.identity()
@@ -460,11 +481,49 @@ class EllipticPoint:
 
         return solution
 
-    def ECDLP_bruteforce_attack(curve, P, Q, tries):
-        for n in range(1, tries):
+    # def ECDLP_bruteforce_attack(curve, P, Q, tries):
+    #     for n in range(1, tries):
+    #         if Q == n*P:
+    #             return n
+      
+
+class ECDLP_Attacker:
+    def __init__(self, curve, P, Q):
+        self.curve = curve
+        self.P = P
+        self.Q = Q
+        self.NoneVal = -1
+        self.solution = self.NoneVal
+        self.lock = Lock()
+
+    def bruteforce(self, tries, num_threads):
+        self.solution = Value('i', self.NoneVal)
+        threads = [
+                Process(target=self.bruteforce_threadfn, args=(i, num_threads, tries, self.P, self.Q))
+                for i in range(num_threads)
+            ]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        self.solution = self.solution.value
+        return self.solution
+
+    def bruteforce_threadfn(self, id, n_threads, tries, P, Q):
+        # print(f"ID: {id}  \t low: {low} \t high: {high}")
+        n = id
+        while n <= tries and self.solution.value == self.NoneVal:
             if Q == n*P:
-                return n
-            
+                self.lock.acquire()
+                self.solution.value = n
+                self.lock.release()
+            n += n_threads
+        return self.solution.value
+    
+
 class EllipticCurve:
     def __init__(self,A,B):
         """Initialize an Elliptic Curve defined by Y^2 = X^3 + AX + B
@@ -605,9 +664,9 @@ class EC_ElGamalSystem():
     def generate_public_key(self, private_key):
         return private_key * self.point
         
-    def Encrypt(self, private_key, public_key, message):
-        c1 = private_key * self.point
-        c2 = message + private_key * public_key
+    def Encrypt(self, emhemeral_key, public_key, message):
+        c1 = emhemeral_key * self.point
+        c2 = message + emhemeral_key * public_key
         return (c1, c2)
 
     def Decrypt(self, ciphertext, private_key):
@@ -626,10 +685,13 @@ class EC_DiffieHellmanSystem():
         return private_key * public_key
 
 class ECDSA():
-    def __init__(self, curve, point):
+    def __init__(self, curve, point, order=None):
         self.curve = curve
         self.point = point
-        self.order = self.point.get_order()
+        if order == None:
+            self.order = self.point.get_order()
+        else:
+            self.order = order
 
         if not is_prime(self.order):
             raise Exception("The Order of the public point must be prime")
